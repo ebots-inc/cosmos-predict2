@@ -18,6 +18,7 @@ import json
 import os
 import pickle
 import shutil
+import subprocess
 
 import numpy as np
 from tqdm import tqdm
@@ -73,6 +74,44 @@ def parse_args() -> argparse.ArgumentParser:
         help="(LeRobot) Copy videos into a flat <dataset_path>/videos/*.mp4 layout.",
     )
     return parser.parse_args()
+
+
+def _transcode_all_videos_to_h264_dir(videos_dir: str) -> None:
+    """
+    Very small helper to mirror:
+      mkdir -p h264
+      for f in *.mp4; do ffmpeg ... "h264/$f"; done
+    """
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe:
+        print("ffmpeg not found; skipping video transcoding (install with: sudo apt install -y ffmpeg)")
+        return
+
+    h264_dir = os.path.join(videos_dir, "h264")
+    os.makedirs(h264_dir, exist_ok=True)
+    for f in sorted(os.listdir(videos_dir)):
+        if not f.endswith(".mp4"):
+            continue
+        src = os.path.join(videos_dir, f)
+        dst = os.path.join(h264_dir, f)
+        cmd = [
+            ffmpeg_exe,
+            "-y",
+            "-i",
+            src,
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            dst,
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+        except Exception as e:
+            print(f"ffmpeg failed for {src}: {e}")
 
 
 def main(args) -> None:
@@ -171,6 +210,10 @@ def main(args) -> None:
         # Save T5 embeddings as pickle file
         with open(t5_xxl_filename, "wb") as fp:
             pickle.dump(encoded_text, fp)  # list of np.ndarray in (len, 1024)
+
+    # After ensuring <dataset_path>/videos/*.mp4 exists (copied for LeRobot or already present for groot_csv),
+    # transcode into <dataset_path>/videos/h264/*.mp4 (H.264) for decord compatibility.
+    _transcode_all_videos_to_h264_dir(videos_flat_dir)
 
 
 if __name__ == "__main__":

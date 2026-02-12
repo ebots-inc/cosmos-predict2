@@ -17,7 +17,7 @@
 A variant of predict2_video2world.py for GR00T models that:
 1. Supports prompt prefix for robot task descriptions
 2. Turns off the guardrail and prompt refiner
-3. Supports two GR00T variants: GR1 and DROID
+3. Supports GR00T variants: GR1, DROID, and EBOTS
 """
 
 import argparse
@@ -42,6 +42,11 @@ from cosmos_predict2.pipelines.video2world import Video2WorldPipeline
 from examples.video2world import _DEFAULT_NEGATIVE_PROMPT, validate_input_file
 from imaginaire.utils import distributed, log, misc
 from imaginaire.utils.io import save_image_or_video, save_text_prompts
+
+
+def _expand_path(p: str) -> str:
+    # Expand "~" and environment variables.
+    return os.path.expandvars(os.path.expanduser(p))
 
 
 def parse_args() -> argparse.Namespace:
@@ -121,7 +126,7 @@ def parse_args() -> argparse.Namespace:
         help="Disable guardrail checks on prompts",
     )
     parser.add_argument(
-        "--gr00t_variant", type=str, required=True, help="GR00T variant to use", choices=["gr1", "droid"]
+        "--gr00t_variant", type=str, required=True, help="GR00T variant to use", choices=["gr1", "droid", "ebots"]
     )
     parser.add_argument(
         "--prompt_prefix", type=str, default="The robot arm is performing a task. ", help="Prefix to add to all prompts"
@@ -136,7 +141,7 @@ def setup_pipeline(args: argparse.Namespace):
     config = get_cosmos_predict2_video2world_pipeline(model_size=args.model_size, resolution=resolution, fps=fps)
     config.prompt_refiner_config.enabled = False
     if args.dit_path:
-        dit_path = args.dit_path
+        dit_path = _expand_path(args.dit_path)
     else:
         dit_path = get_cosmos_predict2_gr00t_checkpoint(
             gr00t_variant=args.gr00t_variant,
@@ -193,7 +198,10 @@ def process_single_generation(
     seed: int,
     prompt_prefix: str,
 ) -> bool:
-    # Validate input file
+    input_path = _expand_path(input_path)
+    output_path = _expand_path(output_path)
+
+    # Validate input file (supports images and videos depending on num_conditional_frames)
     if not validate_input_file(input_path, num_conditional_frames):
         log.warning(f"Input file validation failed: {input_path}")
         return False
@@ -240,8 +248,9 @@ def generate_video(args: argparse.Namespace, pipe: Video2WorldPipeline) -> None:
     # Video-to-World
     if args.batch_input_json is not None:
         # Process batch inputs from JSON file
-        log.info(f"Loading batch inputs from JSON file: {args.batch_input_json}")
-        with open(args.batch_input_json) as f:
+        batch_path = _expand_path(args.batch_input_json)
+        log.info(f"Loading batch inputs from JSON file: {batch_path}")
+        with open(batch_path) as f:
             batch_inputs = json.load(f)
 
         for idx, item in enumerate(tqdm(batch_inputs)):
