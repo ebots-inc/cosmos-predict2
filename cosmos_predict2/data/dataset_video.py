@@ -55,12 +55,18 @@ class Dataset(Dataset):
         """
 
         super().__init__()
-        self.dataset_dir = dataset_dir
+        # Expand "~" so dataloader workers resolve paths correctly.
+        self.dataset_dir = os.path.expanduser(dataset_dir)
+        # Fixed-length clip sampling.
+        if num_frames <= 0:
+            raise ValueError(f"num_frames must be positive, got {num_frames}")
         self.sequence_length = num_frames
 
         video_dir = os.path.join(self.dataset_dir, "videos")
         self.t5_dir = os.path.join(self.dataset_dir, "t5_xxl")
 
+        if not os.path.isdir(video_dir):
+            raise FileNotFoundError(f"Video directory not found: {video_dir}")
         self.video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
         self.video_paths = sorted(self.video_paths)
         # remove video paths that does not have t5_embedding
@@ -70,6 +76,11 @@ class Dataset(Dataset):
             if os.path.exists(os.path.join(self.t5_dir, os.path.basename(path).replace(".mp4", ".pickle")))
         ]
         log.info(f"{len(self.video_paths)} videos in total")
+        if len(self.video_paths) == 0:
+            raise RuntimeError(
+                f"No usable videos found under {video_dir}. "
+                f"Expected mp4s in {video_dir} with matching pickles in {self.t5_dir}."
+            )
 
         self.wrong_number = 0
         self.preprocess = T.Compose([ToTensorVideo(), Resize_Preprocess(tuple(video_size))])
@@ -173,7 +184,8 @@ class Dataset(Dataset):
             warnings.warn(traceback.format_exc())  # noqa: B028
             self.wrong_number += 1
             log.info(self.wrong_number, rank0_only=False)
-            return self[np.random.randint(len(self.samples))]
+            # Re-sample from available videos.
+            return self[np.random.randint(len(self.video_paths))]
 
 
 if __name__ == "__main__":

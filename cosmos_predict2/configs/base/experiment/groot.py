@@ -56,6 +56,47 @@ cs.store(
     node=dataloader_train_gr1,
 )
 
+# EBOTS examples (LeRobot-style folder with videos/*.mp4 + t5_xxl/*.pickle)
+example_video_dataset_ebots_224 = L(Dataset)(
+    dataset_dir="~/set_1",
+    num_frames=140,
+    video_size=(224, 224),
+)
+dataloader_train_ebots_224 = L(DataLoader)(
+    dataset=example_video_dataset_ebots_224,
+    sampler=L(get_sampler)(dataset=example_video_dataset_ebots_224),
+    batch_size=1,
+    drop_last=True,
+    num_workers=8,
+    pin_memory=True,
+)
+cs.store(
+    group="dataloader_train",
+    package="dataloader_train",
+    name="ebots_224",
+    node=dataloader_train_ebots_224,
+)
+
+example_video_dataset_ebots_896 = L(Dataset)(
+    dataset_dir="~/set_1",
+    num_frames=140,
+    video_size=(896, 896),
+)
+dataloader_train_ebots_896 = L(DataLoader)(
+    dataset=example_video_dataset_ebots_896,
+    sampler=L(get_sampler)(dataset=example_video_dataset_ebots_896),
+    batch_size=1,
+    drop_last=True,
+    num_workers=8,
+    pin_memory=True,
+)
+cs.store(
+    group="dataloader_train",
+    package="dataloader_train",
+    name="ebots_896",
+    node=dataloader_train_ebots_896,
+)
+
 # NVTE_FUSED_ATTN=0 torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/configs/base/config.py -- experiment=predict2_video2world_training_2b_groot_gr1_480
 predict2_video2world_training_2b_groot_gr1_480 = dict(
     defaults=[
@@ -146,12 +187,198 @@ predict2_video2world_training_14b_groot_gr1_480 = dict(
     ),
 )
 
+# EBOTS: 2B, full-video, 224x224
+predict2_video2world_training_2b_ebots_224 = dict(
+    defaults=[
+        {"override /model": "predict2_video2world_fsdp_2b"},
+        {"override /optimizer": "fusedadamw"},
+        {"override /ckpt_type": "standard"},
+        {"override /dataloader_val": "mock"},
+        {"override /dataloader_train": "ebots_224"},
+        {"override /scheduler": "lambdalinear"},
+        "_self_",
+    ],
+    model=dict(
+        config=dict(
+            fsdp_shard_size=8,
+            pipe_config=dict(guardrail_config=dict(enabled=False)),
+        )
+    ),
+    optimizer=dict(
+        lr=2 ** (-14.5),
+    ),
+    scheduler=dict(
+        f_max=[0.2],
+        f_min=[0.1],
+        warm_up_steps=[1_000],
+        cycle_lengths=[100_000],
+    ),
+    job=dict(
+        project="posttraining",
+        group="video2world",
+        name="2b_ebots_224",
+    ),
+    model_parallel=dict(
+        context_parallel_size=1,
+    ),
+    trainer=dict(
+        distributed_parallelism="fsdp",
+        callbacks=dict(
+            iter_speed=dict(hit_thres=200),
+        ),
+    ),
+    checkpoint=dict(
+        save_iter=200,
+    ),
+)
+
+# EBOTS: 2B, full-video, 896x896
+predict2_video2world_training_2b_ebots_896 = dict(
+    defaults=[
+        {"override /model": "predict2_video2world_fsdp_2b"},
+        {"override /optimizer": "fusedadamw"},
+        {"override /ckpt_type": "standard"},
+        {"override /dataloader_val": "mock"},
+        {"override /dataloader_train": "ebots_896"},
+        {"override /scheduler": "lambdalinear"},
+        "_self_",
+    ],
+    model=dict(
+        config=dict(
+            fsdp_shard_size=8,
+            pipe_config=dict(guardrail_config=dict(enabled=False)),
+        )
+    ),
+    optimizer=dict(
+        lr=2 ** (-14.5),
+    ),
+    scheduler=dict(
+        f_max=[0.2],
+        f_min=[0.1],
+        warm_up_steps=[1_000],
+        cycle_lengths=[100_000],
+    ),
+    job=dict(
+        project="posttraining",
+        group="video2world",
+        name="2b_ebots_896",
+    ),
+    model_parallel=dict(
+        context_parallel_size=1,
+    ),
+    trainer=dict(
+        distributed_parallelism="fsdp",
+        callbacks=dict(
+            iter_speed=dict(hit_thres=200),
+        ),
+    ),
+    checkpoint=dict(
+        save_iter=200,
+    ),
+)
+
+# EBOTS: 14B, full-video, 224x224
+predict2_video2world_training_14b_ebots_224 = dict(
+    defaults=[
+        {"override /model": "predict2_video2world_fsdp_14b"},
+        {"override /optimizer": "fusedadamw"},
+        {"override /ckpt_type": "standard"},
+        {"override /dataloader_val": "mock"},
+        {"override /dataloader_train": "ebots_224"},
+        {"override /scheduler": "lambdalinear"},
+        "_self_",
+    ],
+    model=dict(
+        config=dict(
+            fsdp_shard_size=32,
+            pipe_config=dict(guardrail_config=dict(enabled=False)),
+        )
+    ),
+    optimizer=dict(
+        lr=2 ** (-14.5),
+    ),
+    scheduler=dict(
+        f_max=[0.2],
+        f_min=[0.1],
+        warm_up_steps=[1_000],
+        cycle_lengths=[100_000],
+    ),
+    job=dict(
+        project="posttraining",
+        group="video2world",
+        name="14b_ebots_224",
+    ),
+    model_parallel=dict(
+        context_parallel_size=4,
+    ),
+    trainer=dict(
+        distributed_parallelism="fsdp",
+        callbacks=dict(
+            iter_speed=dict(hit_thres=200),
+        ),
+    ),
+    checkpoint=dict(
+        save_iter=200,
+    ),
+)
+
+# EBOTS: 14B, full-video, 896x896
+predict2_video2world_training_14b_ebots_896 = dict(
+    defaults=[
+        {"override /model": "predict2_video2world_fsdp_14b"},
+        {"override /optimizer": "fusedadamw"},
+        {"override /ckpt_type": "standard"},
+        {"override /dataloader_val": "mock"},
+        {"override /dataloader_train": "ebots_896"},
+        {"override /scheduler": "lambdalinear"},
+        "_self_",
+    ],
+    model=dict(
+        config=dict(
+            fsdp_shard_size=32,
+            pipe_config=dict(guardrail_config=dict(enabled=False)),
+        )
+    ),
+    optimizer=dict(
+        lr=2 ** (-14.5),
+    ),
+    scheduler=dict(
+        f_max=[0.2],
+        f_min=[0.1],
+        warm_up_steps=[1_000],
+        cycle_lengths=[100_000],
+    ),
+    job=dict(
+        project="posttraining",
+        group="video2world",
+        name="14b_ebots_896",
+    ),
+    model_parallel=dict(
+        context_parallel_size=4,
+    ),
+    trainer=dict(
+        distributed_parallelism="fsdp",
+        callbacks=dict(
+            iter_speed=dict(hit_thres=200),
+        ),
+    ),
+    checkpoint=dict(
+        save_iter=200,
+    ),
+)
+
 
 for _item in [
     # 2b, gr1
     predict2_video2world_training_2b_groot_gr1_480,
     # 14b, gr1
     predict2_video2world_training_14b_groot_gr1_480,
+    # 2b, ebots
+    predict2_video2world_training_2b_ebots_224,
+    predict2_video2world_training_2b_ebots_896,
+    # 14b, ebots
+    predict2_video2world_training_14b_ebots_224,
+    predict2_video2world_training_14b_ebots_896,
 ]:
     # Get the experiment name from the global variable, e.g. exp01_wan_lora -> experiment_name = "exp01_wan_lora"
     experiment_name = [name.lower() for name, value in globals().items() if value is _item][0]  # noqa: RUF015
