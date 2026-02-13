@@ -171,7 +171,10 @@ class Checkpointer:
         assert self.load_path is None, "load_path is not supported yet"
         self.callbacks.on_load_checkpoint_start(model)
 
-        is_fsdp = model.config.fsdp_shard_size != 0 and distributed.get_world_size() > 1
+        # NOTE: When fsdp_shard_size != 0, the model weights can be DTensor even on a single GPU.
+        # In that case, loading a checkpoint via plain load_state_dict() can fail with
+        # "got mixed torch.Tensor and DTensor" errors; the FSDP/DTensor-aware loader below handles it.
+        is_fsdp = model.config.fsdp_shard_size != 0
 
         latest_checkpoint_file = self._read_latest_checkpoint_file()
         if latest_checkpoint_file is not None:
