@@ -19,10 +19,12 @@ import os
 import pickle
 import shutil
 import subprocess
+import tempfile
 
 import numpy as np
 from tqdm import tqdm
 
+from decord import VideoReader, cpu
 from imaginaire.auxiliary.text_encoder import CosmosT5TextEncoder, CosmosT5TextEncoderConfig
 from imaginaire.constants import T5_MODEL_DIR
 
@@ -76,24 +78,60 @@ def parse_args() -> argparse.ArgumentParser:
     return parser.parse_args()
 
 
-def _transcode_all_videos_to_h264_dir(videos_dir: str) -> None:
+def _video_needs_transcode(video_path: str) -> bool:
+    """
+    Returns True if the video is not decord-readable.
+    This matches training, which uses decord to decode mp4s.
+    """
+    try:
+        vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
+        if len(vr) <= 0:
+            return True
+        _ = vr[0].asnumpy()
+        del vr
+        return False
+    except Exception:
+        return True
+
+
+def _maybe_transcode_videos_inplace(videos_dir: str) -> None:
     """
     Very small helper to mirror:
-      mkdir -p h264
-      for f in *.mp4; do ffmpeg ... "h264/$f"; done
+      for f in *.mp4; do
+        if not decord-readable:
+          ffmpeg ... "$f" > "$f"  (implemented as tmp file + atomic replace)
+        fi
+      done
     """
+    mp4_files = [f for f in sorted(os.listdir(videos_dir)) if f.endswith(".mp4")]
+    if not mp4_files:
+        return
+
+    bad_files: list[str] = []
+    for f in mp4_files:
+        src = os.path.join(videos_dir, f)
+        if _video_needs_transcode(src):
+            bad_files.append(f)
+
+    # If all videos are already decord-readable, do nothing and don't create extra folders/files.
+    if not bad_files:
+        return
+
     ffmpeg_exe = shutil.which("ffmpeg")
     if not ffmpeg_exe:
         print("ffmpeg not found; skipping video transcoding (install with: sudo apt install -y ffmpeg)")
         return
 
-    h264_dir = os.path.join(videos_dir, "h264")
-    os.makedirs(h264_dir, exist_ok=True)
-    for f in sorted(os.listdir(videos_dir)):
-        if not f.endswith(".mp4"):
-            continue
+    for f in bad_files:
         src = os.path.join(videos_dir, f)
-        dst = os.path.join(h264_dir, f)
+        dst = src
+
+        if not os.path.exists(src):
+            print(f"missing source video, skipping: {src}")
+            continue
+
+        fd, tmp_path = tempfile.mkstemp(prefix=".tmp_h264_", suffix=".mp4", dir=videos_dir)
+        os.close(fd)
         cmd = [
             ffmpeg_exe,
             "-y",
@@ -106,12 +144,20 @@ def _transcode_all_videos_to_h264_dir(videos_dir: str) -> None:
             "yuv420p",
             "-movflags",
             "+faststart",
-            dst,
+            tmp_path,
         ]
         try:
             subprocess.run(cmd, check=True)
+            os.replace(tmp_path, dst)
+            print(f"Replaced with training-compatible H.264: {dst}")
         except Exception as e:
             print(f"ffmpeg failed for {src}: {e}")
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
 
 
 def main(args) -> None:
@@ -212,8 +258,8 @@ def main(args) -> None:
             pickle.dump(encoded_text, fp)  # list of np.ndarray in (len, 1024)
 
     # After ensuring <dataset_path>/videos/*.mp4 exists (copied for LeRobot or already present for groot_csv),
-    # transcode into <dataset_path>/videos/h264/*.mp4 (H.264) for decord compatibility.
-    _transcode_all_videos_to_h264_dir(videos_flat_dir)
+    # transcode only decord-unreadable videos in-place to H.264 for training compatibility.
+    _maybe_transcode_videos_inplace(videos_flat_dir)
 
 
 if __name__ == "__main__":

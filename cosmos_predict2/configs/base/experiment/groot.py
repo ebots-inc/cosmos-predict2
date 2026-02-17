@@ -59,7 +59,7 @@ cs.store(
 # EBOTS examples (LeRobot-style folder with videos/*.mp4 + t5_xxl/*.pickle)
 example_video_dataset_ebots_224 = L(Dataset)(
     dataset_dir="~/set_1",
-    num_frames=140,
+    num_frames=93,
     video_size=(224, 224),
 )
 dataloader_train_ebots_224 = L(DataLoader)(
@@ -79,7 +79,7 @@ cs.store(
 
 example_video_dataset_ebots_896 = L(Dataset)(
     dataset_dir="~/set_1",
-    num_frames=140,
+    num_frames=93,
     video_size=(896, 896),
 )
 dataloader_train_ebots_896 = L(DataLoader)(
