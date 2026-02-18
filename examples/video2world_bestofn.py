@@ -294,7 +294,7 @@ def parse_args():
         help="Cast text encoder from checkpoint precision to pipeline precision",
     )
     # GR00T-specific settings. Specify --gr00t_variant to enable
-    parser.add_argument("--gr00t_variant", type=str, default="", help="GR00T variant to use", choices=["gr1", "droid"])
+    parser.add_argument("--gr00t_variant", type=str, default="", help="GR00T variant to use", choices=["gr1", "droid", "ebots"])
     parser.add_argument(
         "--prompt_prefix", type=str, default="The robot arm is performing a task. ", help="Prefix to add to all prompts"
     )
