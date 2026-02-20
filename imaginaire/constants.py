@@ -196,7 +196,7 @@ def get_cosmos_predict2_action_conditioned_checkpoint(
     )
 
 
-CosmosPredict2Gr00tModelSize = Literal["14B"]
+CosmosPredict2Gr00tModelSize = Literal["2B", "14B"]
 CosmosPredict2Gr00tResolution = Literal["480"]
 CosmosPredict2Gr00tFPS = Literal[16]
 CosmosPredict2Gr00tAspectRatio = CosmosPredict2Video2WorldAspectRatio
