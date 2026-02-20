@@ -62,19 +62,47 @@ class Dataset(Dataset):
             raise ValueError(f"num_frames must be positive, got {num_frames}")
         self.sequence_length = num_frames
 
-        video_dir = os.path.join(self.dataset_dir, "videos")
+        tiled_dir = os.path.join(self.dataset_dir, "videos_tiled", "observation.images.tiled")
+        use_tiled = os.path.isdir(tiled_dir)
+        video_dir = tiled_dir if use_tiled else os.path.join(self.dataset_dir, "videos")
         self.t5_dir = os.path.join(self.dataset_dir, "t5_xxl")
 
         if not os.path.isdir(video_dir):
             raise FileNotFoundError(f"Video directory not found: {video_dir}")
-        self.video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
-        self.video_paths = sorted(self.video_paths)
-        # remove video paths that does not have t5_embedding
-        self.video_paths = [
-            path
-            for path in self.video_paths
-            if os.path.exists(os.path.join(self.t5_dir, os.path.basename(path).replace(".mp4", ".pickle")))
-        ]
+
+        if use_tiled:
+            video_paths = []
+            for dirpath, _, filenames in os.walk(video_dir):
+                for fn in filenames:
+                    if fn.endswith(".mp4") and fn.startswith("episode_"):
+                        video_paths.append(os.path.join(dirpath, fn))
+            self.video_paths = sorted(video_paths)
+
+            kept_video_paths = []
+            self.t5_paths = []
+            for path in self.video_paths:
+                base = os.path.basename(path)
+                try:
+                    ep_idx = int(base[len("episode_") : -len(".mp4")])
+                except Exception:
+                    continue
+                t5_path = os.path.join(self.t5_dir, f"{ep_idx}.pickle")
+                if os.path.exists(t5_path):
+                    kept_video_paths.append(path)
+                    self.t5_paths.append(t5_path)
+            self.video_paths = kept_video_paths
+        else:
+            self.video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
+            self.video_paths = sorted(self.video_paths)
+            # remove video paths that does not have t5_embedding
+            self.video_paths = [
+                path
+                for path in self.video_paths
+                if os.path.exists(os.path.join(self.t5_dir, os.path.basename(path).replace(".mp4", ".pickle")))
+            ]
+            self.t5_paths = [
+                os.path.join(self.t5_dir, os.path.basename(path).replace(".mp4", ".pickle")) for path in self.video_paths
+            ]
         log.info(f"{len(self.video_paths)} videos in total")
         if len(self.video_paths) == 0:
             raise RuntimeError(
@@ -132,10 +160,7 @@ class Dataset(Dataset):
             video, fps = self._get_frames(self.video_paths[index])
             video = video.permute(1, 0, 2, 3)  # Rearrange from [T, C, H, W] to [C, T, H, W]
             video_path = self.video_paths[index]
-            t5_embedding_path = os.path.join(
-                self.t5_dir,
-                os.path.basename(video_path).replace(".mp4", ".pickle"),
-            )
+            t5_embedding_path = self.t5_paths[index]
             data["video"] = video
             data["video_name"] = {
                 "video_path": video_path,
