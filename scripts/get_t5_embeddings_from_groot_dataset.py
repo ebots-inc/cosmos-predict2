@@ -76,9 +76,7 @@ def main(args) -> None:
             except Exception:
                 chunk_size = None
 
-        tiled_root = os.path.join(
-            args.dataset_path, "videos_tiled", "observation.images.tiled"
-        )
+        videos_root = os.path.join(args.dataset_path, "videos")
 
         with open(episodes_jsonl, "r") as f:
             for line in f:
@@ -94,10 +92,11 @@ def main(args) -> None:
 
                 chunk_index = (episode_index // chunk_size) if chunk_size is not None else 0
                 tiled_mp4 = os.path.join(
-                    tiled_root,
                     f"chunk-{chunk_index:03d}",
+                    "observation.images.tiled",
                     f"episode_{episode_index:06d}.mp4",
                 )
+                tiled_mp4 = os.path.join(videos_root, tiled_mp4)
                 if not os.path.exists(tiled_mp4):
                     continue
 

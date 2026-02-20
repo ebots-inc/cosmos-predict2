@@ -50,7 +50,7 @@ def _parse_args() -> argparse.Namespace:
         "--out_video_key",
         type=str,
         default="observation.images.tiled",
-        help="Folder name under videos_tiled/ to write outputs.",
+        help="Folder name under videos/chunk-*/ to write outputs.",
     )
     p.add_argument(
         "--overwrite",
@@ -61,13 +61,36 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _iter_episode_mp4s(videos_root: str, video_key: str) -> Iterator[str]:
-    root = os.path.join(videos_root, video_key)
-    if not os.path.isdir(root):
-        return
-    for dirpath, _, filenames in os.walk(root):
+    # Expected LeRobot layout:
+    #   videos/chunk-XXX/<video_key>/episode_XXXXXX.mp4
+    for dirpath, _, filenames in os.walk(videos_root):
+        base = os.path.basename(dirpath)
+        if base != video_key:
+            continue
+        chunk_dir = os.path.basename(os.path.dirname(dirpath))
+        if not chunk_dir.startswith("chunk-"):
+            continue
         for fn in filenames:
             if fn.lower().endswith(".mp4") and fn.startswith("episode_"):
                 yield os.path.join(dirpath, fn)
+
+
+def _replace_video_key(rel_path: str, old: str, new: str) -> str:
+    parts = rel_path.split(os.sep)
+    for i, p in enumerate(parts):
+        if p == old:
+            parts[i] = new
+            return os.sep.join(parts)
+    return rel_path
+
+
+def _remove_video_key(rel_path: str, key: str) -> str:
+    parts = rel_path.split(os.sep)
+    for i, p in enumerate(parts):
+        if p == key:
+            del parts[i]
+            break
+    return os.sep.join(parts)
 
 
 def _atomic_open_writer(dst_path: str, fps: float):
@@ -148,25 +171,21 @@ def main() -> int:
     args = _parse_args()
     dataset_path = os.path.expanduser(args.dataset_path)
     videos_root = os.path.join(dataset_path, "videos")
-    out_root = os.path.join(dataset_path, "videos_tiled")
+    out_root = videos_root
 
     if not os.path.isdir(videos_root):
         print(f"videos/ not found: {videos_root}")
         return 2
 
-    high_root = os.path.join(videos_root, args.video_key_high)
-    left_root = os.path.join(videos_root, args.video_key_left)
-    right_root = os.path.join(videos_root, args.video_key_right)
-
     high_paths = sorted(_iter_episode_mp4s(videos_root, args.video_key_high))
     if not high_paths:
-        print(f"No episodes found under: {high_root}")
+        print(f"No episodes found under: {os.path.join(videos_root, 'chunk-*', args.video_key_high)}")
         return 0
 
     for hp in high_paths:
-        rel = os.path.relpath(hp, high_root)
-        lp = os.path.join(left_root, rel)
-        rp = os.path.join(right_root, rel)
+        rel_full = os.path.relpath(hp, videos_root)
+        lp = os.path.join(videos_root, _replace_video_key(rel_full, args.video_key_high, args.video_key_left))
+        rp = os.path.join(videos_root, _replace_video_key(rel_full, args.video_key_high, args.video_key_right))
 
         if not os.path.exists(lp) or not os.path.exists(rp):
             print("Missing view(s), skipping:")
@@ -175,7 +194,8 @@ def main() -> int:
             print(f"  right: {rp}")
             continue
 
-        out_path = os.path.join(out_root, args.out_video_key, rel)
+        rel_out = _replace_video_key(rel_full, args.video_key_high, args.out_video_key)
+        out_path = os.path.join(out_root, rel_out)
         _tile_one(hp, lp, rp, out_path, overwrite=args.overwrite)
         print(f"Wrote tiled: {out_path}")
 

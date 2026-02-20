@@ -6,7 +6,7 @@
 #
 # Example:
 #   python -m scripts.dump_frame_from_video \
-#     --video_path "/path/to/dataset/videos_tiled/observation.images.tiled/chunk-000/episode_000123.mp4"
+#     --video_path "/path/to/dataset/videos/chunk-000/observation.images.tiled/episode_000123.mp4"
 
 import argparse
 import os

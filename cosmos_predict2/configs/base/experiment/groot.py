@@ -57,7 +57,7 @@ cs.store(
 )
 
 # EBOTS examples (expects t5_xxl/*.pickle; videos are loaded from
-# videos_tiled/observation.images.tiled if present, otherwise videos/*.mp4)
+# videos/chunk-*/observation.images.tiled if present, otherwise videos/*.mp4)
 example_video_dataset_ebots_224 = L(Dataset)(
     dataset_dir="~/set_1",
     num_frames=93,

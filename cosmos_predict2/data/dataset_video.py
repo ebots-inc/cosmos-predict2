@@ -62,9 +62,15 @@ class Dataset(Dataset):
             raise ValueError(f"num_frames must be positive, got {num_frames}")
         self.sequence_length = num_frames
 
-        tiled_dir = os.path.join(self.dataset_dir, "videos_tiled", "observation.images.tiled")
-        use_tiled = os.path.isdir(tiled_dir)
-        video_dir = tiled_dir if use_tiled else os.path.join(self.dataset_dir, "videos")
+        videos_dir = os.path.join(self.dataset_dir, "videos")
+        tiled_key = "observation.images.tiled"
+        use_tiled = False
+        if os.path.isdir(videos_dir):
+            for d in os.listdir(videos_dir):
+                if d.startswith("chunk-") and os.path.isdir(os.path.join(videos_dir, d, tiled_key)):
+                    use_tiled = True
+                    break
+        video_dir = videos_dir
         self.t5_dir = os.path.join(self.dataset_dir, "t5_xxl")
 
         if not os.path.isdir(video_dir):
@@ -73,6 +79,12 @@ class Dataset(Dataset):
         if use_tiled:
             video_paths = []
             for dirpath, _, filenames in os.walk(video_dir):
+                base = os.path.basename(dirpath)
+                if base != tiled_key:
+                    continue
+                chunk_dir = os.path.basename(os.path.dirname(dirpath))
+                if not chunk_dir.startswith("chunk-"):
+                    continue
                 for fn in filenames:
                     if fn.endswith(".mp4") and fn.startswith("episode_"):
                         video_paths.append(os.path.join(dirpath, fn))
