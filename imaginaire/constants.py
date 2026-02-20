@@ -196,22 +196,17 @@ def get_cosmos_predict2_action_conditioned_checkpoint(
     )
 
 
-CosmosPredict2Gr00tModelSize = Literal["2B", "14B"]
+CosmosPredict2Gr00tModelSize = Literal["14B"]
 CosmosPredict2Gr00tResolution = Literal["480"]
 CosmosPredict2Gr00tFPS = Literal[16]
 CosmosPredict2Gr00tAspectRatio = CosmosPredict2Video2WorldAspectRatio
-CosmosPredict2Gr00tVariant = Literal["gr1", "droid", "ebots"]
-CosmosPredict2Gr00tModelType = Literal[
-    "Sample-GR00T-Dreams-GR1",
-    "Sample-GR00T-Dreams-DROID",
-    "Sample-GR00t-Dreams-EBOTS",
-]
+CosmosPredict2Gr00tVariant = Literal["gr1", "droid"]
+CosmosPredict2Gr00tModelType = Literal["Sample-GR00T-Dreams-GR1", "Sample-GR00T-Dreams-DROID"]
 
 
 _GR00T_MODEL_TYPE_MAPPING: dict[CosmosPredict2Gr00tVariant, CosmosPredict2Gr00tModelType] = {
     "gr1": "Sample-GR00T-Dreams-GR1",
     "droid": "Sample-GR00T-Dreams-DROID",
-    "ebots": "Sample-GR00t-Dreams-EBOTS",
 }
 
 
