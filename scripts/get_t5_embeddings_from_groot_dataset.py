@@ -14,17 +14,13 @@
 # limitations under the License.
 
 import argparse
-import json
 import os
 import pickle
-import shutil
-import subprocess
-import tempfile
+import json
 
 import numpy as np
 from tqdm import tqdm
 
-from decord import VideoReader, cpu
 from imaginaire.auxiliary.text_encoder import CosmosT5TextEncoder, CosmosT5TextEncoderConfig
 from imaginaire.constants import T5_MODEL_DIR
 
@@ -39,13 +35,6 @@ def parse_args() -> argparse.ArgumentParser:
         "--dataset_path", type=str, default="datasets/benchmark_train/gr1", help="Root path to the dataset"
     )
     parser.add_argument(
-        "--dataset_format",
-        type=str,
-        choices=["groot_csv", "lerobot"],
-        default="groot_csv",
-        help="Dataset format to read prompts/videos from.",
-    )
-    parser.add_argument(
         "--prompt_prefix", type=str, default="The robot arm is performing a task. ", help="Prefix of the prompt"
     )
     parser.add_argument("--max_length", type=int, help="Maximum length of the text embedding")
@@ -56,108 +45,7 @@ def parse_args() -> argparse.ArgumentParser:
         default="",
         help="Metadata csv file. Default: <dataset_path>/metadata.csv",
     )
-    parser.add_argument(
-        "--episodes_jsonl",
-        type=str,
-        default="",
-        help="(LeRobot) Path to meta/episodes.jsonl. Default: <dataset_path>/meta/episodes.jsonl",
-    )
-    parser.add_argument(
-        "--video_src_dir",
-        type=str,
-        default="",
-        help="(LeRobot) Source dir for videos. Default: <dataset_path>/videos/chunk-000/observation.images.cam_high",
-    )
-    # Default behavior: enabled for LeRobot, disabled for groot_csv (handled in main()).
-    parser.add_argument(
-        "--copy_videos",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="(LeRobot) Copy videos into a flat <dataset_path>/videos/*.mp4 layout.",
-    )
     return parser.parse_args()
-
-
-def _video_needs_transcode(video_path: str) -> bool:
-    """
-    Returns True if the video is not decord-readable.
-    This matches training, which uses decord to decode mp4s.
-    """
-    try:
-        vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
-        if len(vr) <= 0:
-            return True
-        _ = vr[0].asnumpy()
-        del vr
-        return False
-    except Exception:
-        return True
-
-
-def _maybe_transcode_videos_inplace(videos_dir: str) -> None:
-    """
-    Very small helper to mirror:
-      for f in *.mp4; do
-        if not decord-readable:
-          ffmpeg ... "$f" > "$f"  (implemented as tmp file + atomic replace)
-        fi
-      done
-    """
-    mp4_files = [f for f in sorted(os.listdir(videos_dir)) if f.endswith(".mp4")]
-    if not mp4_files:
-        return
-
-    bad_files: list[str] = []
-    for f in mp4_files:
-        src = os.path.join(videos_dir, f)
-        if _video_needs_transcode(src):
-            bad_files.append(f)
-
-    # If all videos are already decord-readable, do nothing and don't create extra folders/files.
-    if not bad_files:
-        return
-
-    ffmpeg_exe = shutil.which("ffmpeg")
-    if not ffmpeg_exe:
-        print("ffmpeg not found; skipping video transcoding (install with: sudo apt install -y ffmpeg)")
-        return
-
-    for f in bad_files:
-        src = os.path.join(videos_dir, f)
-        dst = src
-
-        if not os.path.exists(src):
-            print(f"missing source video, skipping: {src}")
-            continue
-
-        fd, tmp_path = tempfile.mkstemp(prefix=".tmp_h264_", suffix=".mp4", dir=videos_dir)
-        os.close(fd)
-        cmd = [
-            ffmpeg_exe,
-            "-y",
-            "-i",
-            src,
-            "-an",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            tmp_path,
-        ]
-        try:
-            subprocess.run(cmd, check=True)
-            os.replace(tmp_path, dst)
-            print(f"Replaced with training-compatible H.264: {dst}")
-        except Exception as e:
-            print(f"ffmpeg failed for {src}: {e}")
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
 
 
 def main(args) -> None:
@@ -165,26 +53,33 @@ def main(args) -> None:
     os.makedirs(t5_xxl_dir, exist_ok=True)
     meta_txt_dir = os.path.join(args.dataset_path, "metas")
     os.makedirs(meta_txt_dir, exist_ok=True)
-    videos_flat_dir = os.path.join(args.dataset_path, "videos")
-    os.makedirs(videos_flat_dir, exist_ok=True)
 
-    # Auto-detect LeRobot if user didn't explicitly set it and CSV metadata isn't available.
-    detected_format = args.dataset_format
-    if detected_format == "groot_csv":
-        meta_csv_default = args.meta_csv or os.path.join(args.dataset_path, "metadata.csv")
-        episodes_jsonl_default = os.path.join(args.dataset_path, "meta", "episodes.jsonl")
-        if not os.path.exists(meta_csv_default) and os.path.exists(episodes_jsonl_default):
-            detected_format = "lerobot"
+    meta_csv_default = os.path.join(args.dataset_path, "metadata.csv")
+    episodes_jsonl = os.path.join(args.dataset_path, "meta", "episodes.jsonl")
+    lerobot_detected = (not os.path.exists(meta_csv_default)) and os.path.exists(episodes_jsonl)
 
-    if detected_format == "lerobot":
-        episodes_jsonl = args.episodes_jsonl or os.path.join(args.dataset_path, "meta", "episodes.jsonl")
-        video_src_dir = args.video_src_dir or os.path.join(
-            args.dataset_path, "videos", "chunk-000", "observation.images.cam_high"
+    # Collect (video_filename_for_outputs, prompt)
+    meta_items: list[tuple[str, str]] = []
+
+    if lerobot_detected:
+        info_json = os.path.join(args.dataset_path, "meta", "info.json")
+        chunk_size = None
+        if os.path.exists(info_json):
+            try:
+                with open(info_json, "r") as f:
+                    info = json.load(f)
+                chunk_size = info.get("chunks_size", None)
+                if chunk_size is not None:
+                    chunk_size = int(chunk_size)
+                    if chunk_size <= 0:
+                        chunk_size = None
+            except Exception:
+                chunk_size = None
+
+        tiled_root = os.path.join(
+            args.dataset_path, "videos_tiled", "observation.images.tiled"
         )
-        copy_videos = True if args.copy_videos is None else bool(args.copy_videos)
 
-        # (video_filename_for_outputs, prompt_raw, dst_video_path_flat_or_none, src_video_path_or_none)
-        meta_items: list[tuple[str, str, str | None, str | None]] = []
         with open(episodes_jsonl, "r") as f:
             for line in f:
                 line = line.strip()
@@ -194,39 +89,34 @@ def main(args) -> None:
                 episode_index = int(ep["episode_index"])
                 tasks = ep.get("tasks") or []
                 if not tasks:
-                    print(f"Skipping episode {episode_index:06d}: missing/empty tasks")
                     continue
-                prompt_raw = str(tasks[0])
-                src_video_filename = f"episode_{episode_index:06d}.mp4"
-                # Output should be a simple numeric filename like "0.mp4"
+                prompt = str(tasks[0])
+
+                chunk_index = (episode_index // chunk_size) if chunk_size is not None else 0
+                tiled_mp4 = os.path.join(
+                    tiled_root,
+                    f"chunk-{chunk_index:03d}",
+                    f"episode_{episode_index:06d}.mp4",
+                )
+                if not os.path.exists(tiled_mp4):
+                    continue
+
+                # Only used for naming outputs (metas/*.txt and t5_xxl/*.pickle).
                 video_filename = f"{episode_index}.mp4"
-                src_video_path = os.path.join(video_src_dir, src_video_filename)
-                if not os.path.exists(src_video_path):
-                    print(f"Skipping episode {episode_index:06d}: missing source video {src_video_path}")
-                    continue
-                dst_video_path = os.path.join(videos_flat_dir, video_filename) if copy_videos else None
-                meta_items.append((video_filename, prompt_raw, dst_video_path, src_video_path))
+                meta_items.append((video_filename, prompt))
     else:
-        meta_csv = args.meta_csv or os.path.join(args.dataset_path, "metadata.csv")
+        meta_csv = args.meta_csv or meta_csv_default
         meta_lines = open(meta_csv).readlines()[1:]
-        # (video_filename, prompt_raw, dst_video_path, src_video_path)
-        meta_items = []
         for meta_line in meta_lines:
-            video_filename, prompt_raw = meta_line.split(",", 1)
-            prompt_raw = prompt_raw.strip("\n")
-            meta_items.append((video_filename, prompt_raw, None, None))
+            video_filename, prompt = meta_line.split(",", 1)
+            prompt = prompt.strip("\n")
+            meta_items.append((video_filename, prompt))
 
     # Initialize T5
     encoder_config = CosmosT5TextEncoderConfig(ckpt_path=args.cache_dir)
     encoder = CosmosT5TextEncoder(config=encoder_config)
 
-    for video_filename, prompt, dst_video_path, src_video_path in tqdm(meta_items):
-        # LeRobot: optionally copy to flat videos/ layout expected by training Dataset()
-        if dst_video_path is not None and not os.path.exists(dst_video_path):
-            os.makedirs(os.path.dirname(dst_video_path), exist_ok=True)
-            assert src_video_path is not None
-            shutil.copy2(src_video_path, dst_video_path)
-
+    for video_filename, prompt in tqdm(meta_items):
         if prompt.startswith('"') and prompt.endswith('"'):
             # Remove the quotes for robocasa dataset
             prompt = prompt[1:-1]
@@ -256,10 +146,6 @@ def main(args) -> None:
         # Save T5 embeddings as pickle file
         with open(t5_xxl_filename, "wb") as fp:
             pickle.dump(encoded_text, fp)  # list of np.ndarray in (len, 1024)
-
-    # After ensuring <dataset_path>/videos/*.mp4 exists (copied for LeRobot or already present for groot_csv),
-    # transcode only decord-unreadable videos in-place to H.264 for training compatibility.
-    _maybe_transcode_videos_inplace(videos_flat_dir)
 
 
 if __name__ == "__main__":
