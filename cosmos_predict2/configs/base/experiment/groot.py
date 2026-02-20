@@ -78,14 +78,14 @@ cs.store(
     node=dataloader_train_ebots_224,
 )
 
-example_video_dataset_ebots_896 = L(Dataset)(
+example_video_dataset_ebots_448 = L(Dataset)(
     dataset_dir="~/set_1",
     num_frames=93,
-    video_size=(896, 896),
+    video_size=(448, 448),
 )
-dataloader_train_ebots_896 = L(DataLoader)(
-    dataset=example_video_dataset_ebots_896,
-    sampler=L(get_sampler)(dataset=example_video_dataset_ebots_896),
+dataloader_train_ebots_448 = L(DataLoader)(
+    dataset=example_video_dataset_ebots_448,
+    sampler=L(get_sampler)(dataset=example_video_dataset_ebots_448),
     batch_size=1,
     drop_last=True,
     num_workers=8,
@@ -94,8 +94,8 @@ dataloader_train_ebots_896 = L(DataLoader)(
 cs.store(
     group="dataloader_train",
     package="dataloader_train",
-    name="ebots_896",
-    node=dataloader_train_ebots_896,
+    name="ebots_448",
+    node=dataloader_train_ebots_448,
 )
 
 # NVTE_FUSED_ATTN=0 torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/configs/base/config.py -- experiment=predict2_video2world_training_2b_groot_gr1_480
@@ -233,14 +233,14 @@ predict2_video2world_training_2b_ebots_224 = dict(
     ),
 )
 
-# EBOTS: 2B, full-video, 896x896
-predict2_video2world_training_2b_ebots_896 = dict(
+# EBOTS: 2B, full-video, 448x448
+predict2_video2world_training_2b_ebots_448 = dict(
     defaults=[
         {"override /model": "predict2_video2world_fsdp_2b"},
         {"override /optimizer": "fusedadamw"},
         {"override /ckpt_type": "standard"},
         {"override /dataloader_val": "mock"},
-        {"override /dataloader_train": "ebots_896"},
+        {"override /dataloader_train": "ebots_448"},
         {"override /scheduler": "lambdalinear"},
         "_self_",
     ],
@@ -262,7 +262,7 @@ predict2_video2world_training_2b_ebots_896 = dict(
     job=dict(
         project="posttraining",
         group="video2world",
-        name="2b_ebots_896",
+        name="2b_ebots_448",
     ),
     model_parallel=dict(
         context_parallel_size=1,
@@ -323,14 +323,14 @@ predict2_video2world_training_14b_ebots_224 = dict(
     ),
 )
 
-# EBOTS: 14B, full-video, 896x896
-predict2_video2world_training_14b_ebots_896 = dict(
+# EBOTS: 14B, full-video, 448x448
+predict2_video2world_training_14b_ebots_448 = dict(
     defaults=[
         {"override /model": "predict2_video2world_fsdp_14b"},
         {"override /optimizer": "fusedadamw"},
         {"override /ckpt_type": "standard"},
         {"override /dataloader_val": "mock"},
-        {"override /dataloader_train": "ebots_896"},
+        {"override /dataloader_train": "ebots_448"},
         {"override /scheduler": "lambdalinear"},
         "_self_",
     ],
@@ -352,7 +352,7 @@ predict2_video2world_training_14b_ebots_896 = dict(
     job=dict(
         project="posttraining",
         group="video2world",
-        name="14b_ebots_896",
+        name="14b_ebots_448",
     ),
     model_parallel=dict(
         context_parallel_size=4,
@@ -376,10 +376,10 @@ for _item in [
     predict2_video2world_training_14b_groot_gr1_480,
     # 2b, ebots
     predict2_video2world_training_2b_ebots_224,
-    predict2_video2world_training_2b_ebots_896,
+    predict2_video2world_training_2b_ebots_448,
     # 14b, ebots
     predict2_video2world_training_14b_ebots_224,
-    predict2_video2world_training_14b_ebots_896,
+    predict2_video2world_training_14b_ebots_448,
 ]:
     # Get the experiment name from the global variable, e.g. exp01_wan_lora -> experiment_name = "exp01_wan_lora"
     experiment_name = [name.lower() for name, value in globals().items() if value is _item][0]  # noqa: RUF015
